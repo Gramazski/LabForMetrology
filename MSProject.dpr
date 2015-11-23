@@ -2,7 +2,7 @@ program MSProject;
 
 uses
   Forms,
-  DjilbMetricsUnit in 'DjilbMetricsUnit.pas' {Form1};
+  DjilbMetricUnit in 'DjilbMetricUnit.pas' {Form1};
 
 {$R *.res}
 
