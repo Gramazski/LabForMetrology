@@ -1,4 +1,4 @@
-unit MSUnit;
+unit DjilbMetricUnit;
 
 interface
 
@@ -11,9 +11,7 @@ const Digits=['0'..'9'];
 const Operators=';';
 const TextLine=['"',''''];
 const Comments=['/','*'];
-const Spaces=' ';
 const KeyWords: array [1..5] of string=('if','else','while','do','for');
-const ShortKeyWords=['i','e','w','d','f'];
 
 type
   TBrackRec=Record
@@ -25,9 +23,7 @@ type
     CodeMemo: TMemo;
     IfEdit: TEdit;
     DoneButton: TButton;
-    CycleEdit: TEdit;
     Label1: TLabel;
-    Label2: TLabel;
     SumEdit: TEdit;
     Label3: TLabel;
     XPManifest1: TXPManifest;
@@ -43,7 +39,7 @@ type
 
 var
   Form1: TForm1;
-  CodeCondition: string;
+  CodeCondition: char;
 
 implementation
 
@@ -108,12 +104,14 @@ procedure TForm1.DoneButtonClick(Sender: TObject);
    begin
     if length(Token)>1 then
      case Token[2] of
-      '*' : CodeCondition:='MultilineComment';
-      '/' : CodeCondition:='LineComment';
+      '*' : CodeCondition:='M';
+      '/' : CodeCondition:='L';
      end
     else
-     if (Token[1] in TextLine) then
-      CodeCondition:='TextLine';
+     case Token[1] of
+      '''' : CodeCondition:='S';
+      '"'  : CodeCondition:='D';
+     end;
    end;
 
   begin
@@ -143,7 +141,7 @@ procedure TForm1.DoneButtonClick(Sender: TObject);
    Lexeme:=GetLexeme(CodeLine);
    if (Lexeme=EndSymbol) then
    begin
-    CodeCondition:='WorkingCode';
+    CodeCondition:='W';
     i:=length(CodeLine);
    end;
   end;
@@ -182,9 +180,13 @@ procedure TForm1.DoneButtonClick(Sender: TObject);
                  IfIncluding.OpenFlag:=True;
                 inc(OperatorsCount);
                end;
-     'w','d','f' : begin
-                    inc(OperatorsCount);
-                   end;
+     'w','d' : begin
+                inc(OperatorsCount);
+               end;
+     'f' : begin
+            CurrentPosition:=CurrentPosition+2;
+            OperatorsCount:=OperatorsCount+3;
+           end; 
      'O' : if (IfIncluding.OpenFlag) then
             inc(IfIncluding.BracketSum);
      'C' : begin
@@ -205,46 +207,38 @@ procedure TForm1.DoneButtonClick(Sender: TObject);
  end;
 
  procedure DjilbMetrcs;
- var i,IfCount,CycleCount,OperatorsCount,MaxIfIn: integer;
-     Condition: boolean;
+ var i,IfCount,OperatorsCount,MaxIfIn: integer;
      GenOperCount: extended;
      CodeLine,TransformedCode,Lexeme: string;
  begin
-  Condition:=True;
   TransformedCode:='';
   IfCount:=0;
   OperatorsCount:=0;
-  CycleCount:=0;
   MaxIfIn:=0;
-  CodeCondition:='WorkingCode';
+  CodeCondition:='W';
   for i:=0 to CodeMemo.Lines.Count do
   begin
    CodeLine:=CodeMemo.Lines.Strings[i];
    while length(CodeLine)>0 do
    begin
-    if CodeCondition='WorkingCode' then
-    begin
-     Lexeme:=GetLexeme(CodeLine);
-     ExecuteLexeme(Lexeme,CodeLine,TransformedCode);
-    end
-    else
-    begin
-     if CodeCondition='LineComment' then
-     begin
-      CodeCondition:='WorkingCode';
-      Delete(CodeLine,1,length(CodeLine));
-     end;
-     if CodeCondition='TextLine' then
-      ExecuteUnusebleCode(CodeLine,'"');
-     if CodeCondition='MultilineComment' then
-      ExecuteUnusebleCode(CodeLine,'*/');
+    case CodeCondition of
+     'W' : begin
+            Lexeme:=GetLexeme(CodeLine);
+            ExecuteLexeme(Lexeme,CodeLine,TransformedCode);
+           end;
+     'L' : begin
+            CodeCondition:='W';
+            Delete(CodeLine,1,length(CodeLine));
+           end;
+     'M' : ExecuteUnusebleCode(CodeLine,'*/');
+     'S' : ExecuteUnusebleCode(CodeLine,'''');
+     'D' : ExecuteUnusebleCode(CodeLine,'"');
     end;
    end;
   end;
   ExecuteTransformedCode(TransformedCode,MaxIfIn,IfCount,OperatorsCount);
   MaxIfInEdit.Text:=IntToStr(MaxIfIn);
   IfEdit.Text:=IntToStr(IfCount);
-  CycleEdit.Text:=TransformedCode;
   if OperatorsCount<>0 then
   begin
    GenOperCount:=IfCount/OperatorsCount;
