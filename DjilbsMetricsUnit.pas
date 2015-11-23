@@ -1,4 +1,4 @@
-unit DjilbMetricsUnit;
+unit DjilbMetricUnit;
 
 interface
 
@@ -6,18 +6,24 @@ uses
   Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
   Dialogs, StdCtrls, XPMan;
 
+const Letters=['a'..'z','A'..'Z'];
+const Digits=['0'..'9'];
+const Operators=';';
+const TextLine=['"',''''];
+const Comments=['/','*'];
+const KeyWords: array [1..5] of string=('if','else','while','do','for');
+
 type
   TBrackRec=Record
-             BracketNum: integer;
+             BracketSum: integer;
              OpenFlag: boolean;
             end;
+  TSetOfChar=set of char;
   TForm1 = class(TForm)
     CodeMemo: TMemo;
     IfEdit: TEdit;
     DoneButton: TButton;
-    CycleEdit: TEdit;
     Label1: TLabel;
-    Label2: TLabel;
     SumEdit: TEdit;
     Label3: TLabel;
     XPManifest1: TXPManifest;
@@ -33,6 +39,7 @@ type
 
 var
   Form1: TForm1;
+  CodeCondition: char;
 
 implementation
 
@@ -58,135 +65,183 @@ end;
 
 procedure TForm1.DoneButtonClick(Sender: TObject);
 
- function NotEndOfLine(const EndPart,CodeLine: string; var CurrentPosInLine: integer):boolean;
- var k: integer;
- begin
-  result:=False;
-  for k:=1 to length(EndPart) do
-   if CodeLine[CurrentPosInLine+k-1]<>EndPart[k] then
-    result:=True;
- end;
-
- procedure UselessExect(const EndPart,CodeLine: string; var CurrentPosInLine: integer; var Condition: boolean);
- begin
-  while (CurrentPosInLine<length(CodeLine)-length(EndPart)+1) and (NotEndOfLine(EndPart,CodeLine,CurrentPosInLine)) do
-   inc(CurrentPosInLine);
-  if not(NotEndOfLine(EndPart,CodeLine,CurrentPosInLine)) then
-  begin
-   CurrentPosInLine:=CurrentPosInLine+length(EndPart)-1;
-   Condition:=True;
-  end
-  else
-   CurrentPosInLine:=length(CodeLine);
- end;
-
- function CheckLet(const CodeLine: string; var CurrentPosInLine: integer): boolean;
- begin
-  result:=False;
-  case CodeLine[CurrentPosInLine] of
-   '''' : begin
-           inc(CurrentPosInLine);
-           UselessExect('''',CodeLine,CurrentPosInLine,result);
-          end;
-   '"'  : begin
-           inc(CurrentPosInLine);
-           UselessExect('"',CodeLine,CurrentPosInLine,result);
-          end;
-   '/'  : if CodeLine[CurrentPosInLine+1]='*' then
-           begin
-            inc(CurrentPosInLine);
-            UselessExect('*/',CodeLine,CurrentPosInLine,result);
-           end
-           else
-            if CodeLine[CurrentPosInLine+1]='/' then
-            begin
-             result:=True;
-             CurrentPosInLine:=length(CodeLine);
-            end;
-  else
-   result:=True;
-  end;
- end;
-
- procedure ExectCodeLine(var Condition: boolean; var OperCount,IfCount,CycleCount: integer; const CodeLine: string; var Bracket: TBrackRec);
+ function SeparateFromLine(var CodeLine: string; const SetOfValidSymbols: TSetOfChar):string;
  var i: integer;
-     Lexeme: string;
-
-  function UpLet(const Let: char): char;
-  var k: integer;
-  begin
-   result:=Let;
-   if ord(result) in [92..122] then
-      for k:=1 to 32 do
-       dec(result);
-  end;
-
  begin
   i:=1;
-  while i<length(CodeLine)+1 do
-  begin
-   if Condition then
-   begin
-    Lexeme:='';
-    while (CodeLine[i] in ['a'..'z','A'..'Z']) and (i<length(CodeLine)+1) do
-    begin
-     Lexeme:=Lexeme+UpLet(CodeLine[i]);
-     inc(i);
-    end;
-    if (CodeLine[i]=' ') and (Lexeme='IF') then
-    begin
-     if not(Bracket.OpenFlag) then
-      Bracket.OpenFlag:=True;
-     inc(IfCount);
-    end
-    else
-     if ((Lexeme='FOR') and ((CodeLine[i]='(') or (CodeLine[i]=' '))) or ((Lexeme='WHILE') and ((CodeLine[i]=' ') or (CodeLine[i]='('))) then
-       inc(CycleCount)
-     else
-      if CodeLine[i]=';' then
-      begin
-       if Bracket.BracketNum=0 then
-        Bracket.OpenFlag:=False;
-       inc(OperCount);
-      end;
-    if Bracket.OpenFlag then
-     case CodeLine[i] of
-      '{' : inc(Bracket.BracketNum);
-      '}' : dec(Bracket.BracketNum);
-     end;
-    Condition:=CheckLet(CodeLine,i);
-   end
-   else
-    UselessExect('*/',CodeLine,i,Condition);
+  while (CodeLine[i] in SetOfValidSymbols) and (i<length(CodeLine)+1) do
    inc(i);
+  result:=Copy(CodeLine,1,i-1);
+ end;
+
+ function GetLexeme(var CodeLine: string):string;
+ begin
+  case CodeLine[1] of
+   'a'..'z','A'..'Z' : result:=SeparateFromLine(CodeLine,Letters+Digits);
+   '0'..'9' : result:=SeparateFromLine(CodeLine,Digits);
+   '/','*' : result:=SeparateFromLine(CodeLine,Comments);
+  else
+   result:=CodeLine[1];
   end;
+  Delete(CodeLine,1,length(result));
+ end;
+
+ procedure ExecuteLexeme(var Lexeme,CodeLine: string; var TransformedCode: string);
+ var ModifiedLexeme: char;
+
+  function DefineTokenClass(var Token,CodeLine: string):char;
+
+   function CompareWithKeyWords(var Token: string):boolean;
+   var i: integer;
+   begin
+    result:=False;
+    for i:=1 to 5 do
+     if Token=KeyWords[i] then
+      result:=True;
+   end;
+
+   procedure SetCommentCondition(var Token: string);
+   begin
+    if length(Token)>1 then
+     case Token[2] of
+      '*' : CodeCondition:='M';
+      '/' : CodeCondition:='L';
+     end
+    else
+     case Token[1] of
+      '''' : CodeCondition:='S';
+      '"'  : CodeCondition:='D';
+     end;
+   end;
+
+  begin
+   result:='N';
+   case Token[1] of
+    'a'..'z','A'..'Z' : if CompareWithKeyWords(Token) then result:=Token[1];
+    ';' : result:='S';
+    '{' : result:='O';
+    '}' : result:='C';
+    '/','''','"' : SetCommentCondition(Token);
+   end;
+  end;
+
+ begin
+  ModifiedLexeme:=DefineTokenClass(Lexeme,CodeLine);
+  if ModifiedLexeme<>'N' then
+   TransformedCode:=TransformedCode+ModifiedLexeme;
+ end;
+
+ procedure ExecuteUnusebleCode(var CodeLine: string; const EndSymbol: string);
+ var Lexeme: string;
+     i: integer;
+ begin
+  i:=0;
+  while i<length(CodeLine) do
+  begin
+   Lexeme:=GetLexeme(CodeLine);
+   if (Lexeme=EndSymbol) then
+   begin
+    CodeCondition:='W';
+    i:=length(CodeLine);
+   end;
+  end;
+ end;
+
+ procedure ExecuteTransformedCode(var TransformedCode: string; var MaxIfIn,IfCount,OperatorsCount: integer);
+ var CurrentPosition,IfIncludingCount: integer;
+     IfIncluding: TBrackRec;
+
+  procedure EndOfIncluding(var IfIncludind: TBrackRec; var IfIncludingCount,MaxIfIn: integer);
+  begin
+   if IfIncludingCount>MaxIfIn then
+    MaxIfIn:=IfIncludingCount;
+   IfIncluding.OpenFlag:=False;
+   IfIncludingCount:=0;
+  end;
+
+ begin
+  IfIncludingCount:=0;
+  IfIncluding.OpenFlag:=False;
+  IfIncluding.BracketSum:=0;
+  CurrentPosition:=1;
+  while CurrentPosition<length(TransformedCode)+1 do
+  begin
+    case TransformedCode[CurrentPosition] of
+     'i' : begin
+                if (IfIncluding.OpenFlag) then
+                 inc(IfIncludingCount)
+                else
+                 IfIncluding.OpenFlag:=True;
+                inc(IfCount);
+                inc(OperatorsCount);
+               end;
+     'e' : begin
+                if not(IfIncluding.OpenFlag) then
+                 IfIncluding.OpenFlag:=True;
+                inc(OperatorsCount);
+               end;
+     'w','d' : begin
+                inc(OperatorsCount);
+               end;
+     'f' : begin
+            CurrentPosition:=CurrentPosition+2;
+            OperatorsCount:=OperatorsCount+3;
+           end; 
+     'O' : if (IfIncluding.OpenFlag) then
+            inc(IfIncluding.BracketSum);
+     'C' : begin
+            if (IfIncluding.OpenFlag) then
+             dec(IfIncluding.BracketSum);
+            if IfIncluding.BracketSum=0 then
+             EndOfIncluding(IfIncluding,IfIncludingCount,MaxIfIn);
+           end;
+     'S' : begin
+            if IfIncluding.BracketSum=0 then
+             EndOfIncluding(IfIncluding,IfIncludingCount,MaxIfIn);
+            inc(OperatorsCount);
+           end;
+    end;
+   inc(CurrentPosition);
+  end;
+  EndOfIncluding(IfIncluding,IfIncludingCount,MaxIfIn);
  end;
 
  procedure DjilbMetrcs;
- var i,IfCount,CycleCount,OperCount,MaxIfIn: integer;
-     Condition: boolean;
+ var i,IfCount,OperatorsCount,MaxIfIn: integer;
      GenOperCount: extended;
-     Bracket: TBrackRec;
+     CodeLine,TransformedCode,Lexeme: string;
  begin
-  Condition:=True;
+  TransformedCode:='';
   IfCount:=0;
-  OperCount:=0;
-  CycleCount:=0;
-  Bracket.BracketNum:=0;
-  Bracket.OpenFlag:=False;
+  OperatorsCount:=0;
   MaxIfIn:=0;
+  CodeCondition:='W';
   for i:=0 to CodeMemo.Lines.Count do
   begin
-   ExectCodeLine(Condition,OperCount,IfCount,CycleCount,CodeMemo.Lines.Strings[i],Bracket);
-   if Bracket.BracketNum>MaxIfIn then
-    MaxIfIn:=Bracket.BracketNum;
+   CodeLine:=CodeMemo.Lines.Strings[i];
+   while length(CodeLine)>0 do
+   begin
+    case CodeCondition of
+     'W' : begin
+            Lexeme:=GetLexeme(CodeLine);
+            ExecuteLexeme(Lexeme,CodeLine,TransformedCode);
+           end;
+     'L' : begin
+            CodeCondition:='W';
+            Delete(CodeLine,1,length(CodeLine));
+           end;
+     'M' : ExecuteUnusebleCode(CodeLine,'*/');
+     'S' : ExecuteUnusebleCode(CodeLine,'''');
+     'D' : ExecuteUnusebleCode(CodeLine,'"');
+    end;
+   end;
   end;
+  ExecuteTransformedCode(TransformedCode,MaxIfIn,IfCount,OperatorsCount);
   MaxIfInEdit.Text:=IntToStr(MaxIfIn);
   IfEdit.Text:=IntToStr(IfCount);
-  CycleEdit.Text:=IntToStr(CycleCount);
-  if (IfCount+CycleCount+OperCount)<>0 then
+  if OperatorsCount<>0 then
   begin
-   GenOperCount:=Ifcount/(IfCount+CycleCount+OperCount);
+   GenOperCount:=IfCount/OperatorsCount;
    SumEdit.Text:=FloatToStr(GenOperCount);
   end
   else
