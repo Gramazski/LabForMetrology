@@ -20,10 +20,6 @@ type
              BracketSum: integer;
              OpenFlag: boolean;
             end;
-  //TCodeCondition=['MultilineComment','LineComment','WorkoingCode'];
- { TLexeme=Record
-           Token: string;
-           TokenClass: }
   TSetOfChar=set of char;
   TForm1 = class(TForm)
     CodeMemo: TMemo;
